@@ -452,14 +452,15 @@ wss.on('connection', (ws) => {
 // ── Startup ────────────────────────────────────────────────────────────────
 seedAgents();
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`[SERVER] Squad Desktop running at http://localhost:${PORT}`);
 
-  // Start Copilot connection (don't await — let it connect while the window opens)
+  // Connect to Copilot BEFORE opening WebView — w.show() blocks Node's event loop,
+  // so all async work (CLI spawn, timeouts, stream reads) must complete first
   sendTerminalLog('System', '⏳', 'Connecting to GitHub Copilot...', 'analyzing');
-  initCopilotClient();
+  await initCopilotClient();
 
-  // Open native WebView2 window (blocking — must come after server.listen)
+  // Open native WebView2 window (blocking — must come after copilot connection)
   try {
     const w = new Webview();
     w.title('Squad Desktop');

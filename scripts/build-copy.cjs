@@ -19,9 +19,8 @@ function copyFile(src, dest) {
 // --- PWA static files ---
 copyDir(path.join(__dirname, '..', 'public'), path.join(dist, 'public'));
 
-// --- @github/copilot + copilot-sdk (externalized, needed at runtime) ---
+// --- @github/copilot CLI (needed as child process at runtime) ---
 copyDir(path.join(nm, '@github', 'copilot'), path.join(dist, 'node_modules', '@github', 'copilot'));
-copyDir(path.join(nm, '@github', 'copilot-sdk'), path.join(dist, 'node_modules', '@github', 'copilot-sdk'));
 
 // --- webview-nodejs (externalized, full package) ---
 copyDir(path.join(nm, 'webview-nodejs'), path.join(dist, 'node_modules', 'webview-nodejs'));
@@ -41,6 +40,21 @@ copyDir(path.join(nm, 'bindings'), path.join(dist, 'node_modules', 'bindings'));
 // --- file-uri-to-path (dependency of bindings) ---
 if (fs.existsSync(path.join(nm, 'file-uri-to-path'))) {
   copyDir(path.join(nm, 'file-uri-to-path'), path.join(dist, 'node_modules', 'file-uri-to-path'));
+}
+
+// --- Patch: skip getBundledCliPath() when cliUrl is provided ---
+// esbuild replaces import.meta with `var import_meta = {}` in CJS format.
+// The copilot-sdk calls getBundledCliPath() which uses import_meta.resolve()
+// (undefined in CJS). Since we always use cliUrl mode, skip the call entirely.
+const serverCjs = path.join(dist, 'server.cjs');
+if (fs.existsSync(serverCjs)) {
+  let code = fs.readFileSync(serverCjs, 'utf8');
+  code = code.replace(
+    'cliPath: options.cliPath || getBundledCliPath(),',
+    'cliPath: options.cliPath || (options.cliUrl ? "" : getBundledCliPath()),'
+  );
+  fs.writeFileSync(serverCjs, code);
+  console.log('build-copy: patched getBundledCliPath bypass in server.cjs');
 }
 
 console.log('build-copy: dist/ populated with runtime dependencies');
