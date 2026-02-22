@@ -6,6 +6,8 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
+import { CopilotClient } from '@github/copilot-sdk';
+import { Webview } from 'webview-nodejs';
 
 // Compute script directory: works in ESM (dev) and CJS (esbuild bundle)
 const _scriptDir = (() => {
@@ -148,8 +150,6 @@ async function initCopilotClient(retries = 2) {
       console.log(`[CONN] CLI server on port ${cliPort}`);
       sendTerminalLog('System', '⏳', `CLI server on port ${cliPort}`, 'analyzing');
 
-      console.log(`[CONN] importing CopilotClient...`);
-      const { CopilotClient } = await import('@github/copilot-sdk');
       console.log(`[CONN] creating CopilotClient with cliUrl=localhost:${cliPort}`);
       const copilotClient = new CopilotClient({
         cliUrl: `localhost:${cliPort}`,
@@ -460,17 +460,17 @@ server.listen(PORT, () => {
   initCopilotClient();
 
   // Open native WebView2 window (blocking — must come after server.listen)
-  import('webview-nodejs').then(({ Webview }) => {
+  try {
     const w = new Webview();
     w.title('Squad Desktop');
     w.size(1200, 800);
     w.navigate(`http://localhost:${PORT}`);
     w.show(); // Blocks until window is closed
     shutdown();
-  }).catch((err) => {
+  } catch (err) {
     console.error('[SERVER] Failed to open WebView window:', err.message);
     console.log(`[SERVER] Open browser manually: http://localhost:${PORT}`);
-  });
+  }
 });
 
 // ── Graceful Shutdown ──────────────────────────────────────────────────────
