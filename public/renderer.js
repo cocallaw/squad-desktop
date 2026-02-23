@@ -16,8 +16,8 @@ function renderAgentCard(agent) {
     card.dataset.agentId = agent.id;
 
     const statusClass = agent.status.toLowerCase();
-    const outputPreview = agent.output && agent.output.length > 0 
-        ? agent.output.slice(-3).join('\n')
+    const outputText = agent.output && agent.output.length > 0 
+        ? agent.output.join('\n')
         : 'No recent output';
 
     card.innerHTML = `
@@ -29,7 +29,7 @@ function renderAgentCard(agent) {
             </div>
             <span class="status-badge ${statusClass}">${agent.status}</span>
         </div>
-        <div class="agent-output" title="Click to expand">${outputPreview}</div>
+        <div class="agent-output" title="Click to expand/collapse">${outputText}</div>
     `;
 
     return card;
@@ -81,11 +81,11 @@ function updateAgentCard(agentId, status, output) {
         statusBadge.className = `status-badge ${status.toLowerCase()}`;
         statusBadge.textContent = status;
 
-        const outputPreview = output && output.length > 0 
-            ? output.slice(-3).join('\n')
+        const outputText = output && output.length > 0 
+            ? output.join('\n')
             : 'No recent output';
         const agentOutput = card.querySelector('.agent-output');
-        agentOutput.textContent = outputPreview;
+        agentOutput.textContent = outputText;
     }
 }
 

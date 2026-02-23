@@ -271,6 +271,8 @@ body {
 .agent-output.expanded {
     max-height: 400px;
     overflow-y: auto;
+    border: 1px solid var(--accent-teal);
+    background: rgba(0, 0, 0, 0.5);
 }
 
 .terminal-content {
