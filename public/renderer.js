@@ -304,9 +304,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             try {
-                await window.squadAPI.sendCommand(agentId, command);
+                const queueItem = await window.squadAPI.sendCommand(agentId, command);
                 commandInput.value = '';
                 commandInput.style.height = 'auto';
+                // In native mode there's no server push, so update UI directly
+                const agent = agents.find(a => a.id === agentId);
+                if (agent && queueItem && !queueItem.error) {
+                    updateQueue(agentId, queueItem);
+                    addTerminalEntry({
+                        timestamp: Date.now(),
+                        agentName: agent.name,
+                        emoji: agent.emoji,
+                        message: `Command queued: ${command}`,
+                        type: 'action'
+                    });
+                }
             } catch (error) {
                 console.error('Failed to send command:', error);
                 addTerminalEntry({

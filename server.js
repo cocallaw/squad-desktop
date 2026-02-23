@@ -467,21 +467,27 @@ function setupNativeWindow() {
   // Inline everything (replace external refs with inline content)
   html = html.replace('<link rel="stylesheet" href="styles.css">', `<style>${css}</style>`);
   html = html.replace('<link rel="manifest" href="manifest.json">', '');
-  html = html.replace('<script src="squadAPI.js"></script>', `<script>${apiJs}</script>`);
+  // Inject native-mode flag AND initial state so the UI works even if bind
+  // callbacks can't fire (w.show() blocks the Node event loop, so Promises
+  // from w.bind() may never resolve).
+  const initialState = JSON.stringify({ agents, connectionState });
+  html = html.replace('<script src="squadAPI.js"></script>',
+    `<script>window.__NATIVE_MODE__ = true; window.__SQUAD_STATE__ = ${initialState};</script>\n<script>${apiJs}</script>`);
   html = html.replace('<script src="renderer.js"></script>', `<script>${rendererJs}</script>`);
   // Remove service worker registration (not needed in native window)
   html = html.replace(/<script>\s*if\s*\('serviceWorker'[\s\S]*?<\/script>/, '');
 
-  // Bind API functions — these execute inside the webview message loop
-  w.bind('nativeGetAgents', () => JSON.stringify(agents));
+  // Bind API functions — these execute inside the webview message loop.
+  // First arg from webview-nodejs bind() is the webview instance (w), then the JS args follow.
+  w.bind('nativeGetAgents', (_w) => JSON.stringify(agents));
 
-  w.bind('nativeAddAgent', (seq, name, role, emoji) => {
+  w.bind('nativeAddAgent', (_w, name, role, emoji) => {
     const newAgent = { id: randomUUID(), name, role, emoji: emoji || '🤖', status: 'IDLE', output: [], queue: [] };
     agents.push(newAgent);
     return JSON.stringify(agents);
   });
 
-  w.bind('nativeRemoveAgent', (seq, agentId) => {
+  w.bind('nativeRemoveAgent', (_w, agentId) => {
     const entry = agentSessions.get(agentId);
     if (entry?.session) {
       try { entry.session.destroy(); } catch (_) { /* ignore */ }
@@ -491,7 +497,7 @@ function setupNativeWindow() {
     return JSON.stringify(agents);
   });
 
-  w.bind('nativeSendCommand', (seq, agentId, command) => {
+  w.bind('nativeSendCommand', (_w, agentId, command) => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent) return JSON.stringify({ error: 'Agent not found' });
     if (!command) return JSON.stringify({ error: 'command is required' });
@@ -506,22 +512,22 @@ function setupNativeWindow() {
     return JSON.stringify(queueItem);
   });
 
-  w.bind('nativeGetQueue', (seq, agentId) => {
+  w.bind('nativeGetQueue', (_w, agentId) => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent) return JSON.stringify([]);
     return JSON.stringify(agent.queue);
   });
 
-  w.bind('nativeGetConnectionStatus', () => {
+  w.bind('nativeGetConnectionStatus', (_w) => {
     return JSON.stringify({ status: connectionState });
   });
 
-  w.bind('nativeReconnectCopilot', () => {
+  w.bind('nativeReconnectCopilot', (_w) => {
     initCopilotClient();
     return JSON.stringify({ status: connectionState });
   });
 
-  w.bind('nativePoll', () => {
+  w.bind('nativePoll', (_w) => {
     return JSON.stringify(nativeMessageQueue.splice(0));
   });
 

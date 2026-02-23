@@ -2,7 +2,7 @@
 // Provides window.squadAPI backed by fetch() + WebSocket (browser) or w.bind() (native WebView).
 
 (function () {
-  const NATIVE = typeof window.nativeGetAgents === 'function';
+  const NATIVE = window.__NATIVE_MODE__ === true;
   const API_BASE = '';
   const listeners = {
     'agent-status-update': [],
@@ -98,13 +98,24 @@
 
   // --- Public API (matches preload.cjs signatures exactly) ---
 
+  // In NATIVE mode, w.show() blocks the Node event loop so w.bind() Promises
+  // never resolve.  Use the server-injected __SQUAD_STATE__ for reads and
+  // keep a local mirror that write operations update optimistically.
+  var _state = window.__SQUAD_STATE__ || { agents: [], connectionState: 'disconnected' };
+
   window.squadAPI = {
     getAgents: NATIVE
-      ? function () { return window.nativeGetAgents().then(JSON.parse); }
+      ? function () { return Promise.resolve(_state.agents); }
       : function () { return fetchJSON('/api/agents'); },
 
     addAgent: NATIVE
-      ? function (name, role, emoji) { return window.nativeAddAgent(name, role, emoji).then(JSON.parse); }
+      ? function (name, role, emoji) {
+          var a = { id: Date.now().toString(36) + Math.random().toString(36).slice(2,8),
+                    name: name, role: role, emoji: emoji || '🤖',
+                    status: 'IDLE', output: [], queue: [] };
+          _state.agents.push(a);
+          return Promise.resolve(_state.agents);
+        }
       : function (name, role, emoji) {
           return fetchJSON('/api/agents', {
             method: 'POST',
@@ -114,7 +125,10 @@
         },
 
     removeAgent: NATIVE
-      ? function (agentId) { return window.nativeRemoveAgent(agentId).then(JSON.parse); }
+      ? function (agentId) {
+          _state.agents = _state.agents.filter(function (a) { return a.id !== agentId; });
+          return Promise.resolve(_state.agents);
+        }
       : function (agentId) {
           return fetchJSON('/api/agents/' + encodeURIComponent(agentId), {
             method: 'DELETE',
@@ -122,7 +136,14 @@
         },
 
     sendCommand: NATIVE
-      ? function (agentId, command) { return window.nativeSendCommand(agentId, command).then(JSON.parse); }
+      ? function (agentId, command) {
+          var agent = _state.agents.find(function (a) { return a.id === agentId; });
+          if (!agent) return Promise.resolve({ error: 'Agent not found' });
+          var item = { id: Date.now().toString(36), command: command,
+                       status: 'PENDING', timestamp: new Date().toISOString(), result: null };
+          agent.queue.push(item);
+          return Promise.resolve(item);
+        }
       : function (agentId, command) {
           return fetchJSON('/api/agents/' + encodeURIComponent(agentId) + '/command', {
             method: 'POST',
@@ -132,17 +153,20 @@
         },
 
     getQueue: NATIVE
-      ? function (agentId) { return window.nativeGetQueue(agentId).then(JSON.parse); }
+      ? function (agentId) {
+          var agent = _state.agents.find(function (a) { return a.id === agentId; });
+          return Promise.resolve(agent ? agent.queue : []);
+        }
       : function (agentId) {
           return fetchJSON('/api/agents/' + encodeURIComponent(agentId) + '/queue');
         },
 
     getConnectionStatus: NATIVE
-      ? function () { return window.nativeGetConnectionStatus().then(function (r) { return JSON.parse(r).status; }); }
+      ? function () { return Promise.resolve(_state.connectionState); }
       : function () { return fetchJSON('/api/connection-status').then(function (r) { return r.status; }); },
 
     reconnectCopilot: NATIVE
-      ? function () { return window.nativeReconnectCopilot().then(JSON.parse); }
+      ? function () { return Promise.resolve({ status: _state.connectionState }); }
       : function () { return fetchJSON('/api/reconnect', { method: 'POST' }); },
 
     onAgentStatusUpdate: function (callback) {
@@ -158,18 +182,8 @@
     },
   };
 
-  // Boot: native polling or WebSocket
-  if (NATIVE) {
-    setInterval(async function () {
-      try {
-        var raw = await window.nativePoll();
-        var msgs = JSON.parse(raw);
-        for (var i = 0; i < msgs.length; i++) {
-          dispatchMessage(msgs[i]);
-        }
-      } catch (_) {}
-    }, 500);
-  } else {
+  // Boot: native mode uses injected state (no polling needed); browser uses WebSocket
+  if (!NATIVE) {
     connectWebSocket();
   }
 })();
