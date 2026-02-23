@@ -53,7 +53,6 @@ function isSendable() {
 }
 
 function broadcast(type, data) {
-  nativeMessageQueue.push({ type, data });
   if (!isSendable()) return;
   const message = JSON.stringify({ type, data });
   for (const client of wss.clients) {
@@ -536,27 +535,79 @@ function setupNativeWindow() {
   shutdown();
 }
 
+// ── GUI Launcher (parent process) ──────────────────────────────────────────
+// Spawns itself as the server process, waits for READY, then opens a native
+// WebView2 window pointing at the Express server.  w.show() blocks this
+// process's event loop, but the server runs in the child with its own loop.
+function launchGUI() {
+  const args = process.pkg ? [] : [process.argv[1]];
+  const child = spawn(process.execPath, args, {
+    env: { ...process.env, SQUAD_SERVER_MODE: '1' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true
+  });
+
+  let launched = false;
+  let buf = '';
+
+  const startupTimeout = setTimeout(() => {
+    if (!launched) {
+      console.error('[GUI] Server startup timed out (30s)');
+      try { child.kill(); } catch (_) {}
+      process.exit(1);
+    }
+  }, 30000);
+
+  child.stdout.on('data', (chunk) => {
+    buf += chunk.toString();
+    const m = buf.match(/SQUAD_READY:(\d+)/);
+    if (m && !launched) {
+      launched = true;
+      clearTimeout(startupTimeout);
+      const port = m[1];
+      console.log(`[GUI] Server ready on port ${port}, opening window...`);
+
+      const w = new Webview();
+      w.title('Squad Desktop');
+      w.size(1200, 800);
+      w.navigate(`http://localhost:${port}`);
+      w.show(); // Blocks until window closes — server keeps running in child
+
+      try { child.kill(); } catch (_) {}
+      process.exit(0);
+    }
+  });
+
+  child.stderr.on('data', (chunk) => {
+    process.stderr.write(chunk);
+  });
+
+  child.on('exit', (code) => {
+    if (!launched) {
+      clearTimeout(startupTimeout);
+      console.error(`[GUI] Server exited (code ${code}) before ready`);
+      process.exit(1);
+    }
+  });
+
+  process.on('exit', () => { try { child.kill(); } catch (_) {} });
+}
+
 // ── Startup ────────────────────────────────────────────────────────────────
-seedAgents();
-
-server.listen(PORT, async () => {
-  console.log(`[SERVER] Squad Desktop running at http://localhost:${PORT}`);
-
-  sendTerminalLog('System', '⏳', 'Connecting to GitHub Copilot...', 'analyzing');
-  await initCopilotClient();
-
-  try {
-    setupNativeWindow();
-  } catch (err) {
-    console.error('[SERVER] WebView2 failed:', err.message, '— opening browser');
-    const url = `http://localhost:${PORT}`;
-    try {
-      if (process.platform === 'win32') execSync(`start "" "${url}"`, { stdio: 'ignore' });
-      else if (process.platform === 'darwin') execSync(`open "${url}"`, { stdio: 'ignore' });
-      else execSync(`xdg-open "${url}"`, { stdio: 'ignore' });
-    } catch { console.log(`[SERVER] Open manually: ${url}`); }
-  }
-});
+if (process.env.SQUAD_SERVER_MODE === '1') {
+  // Server mode: run Express + copilot (the GUI parent opens a WebView to us)
+  seedAgents();
+  server.listen(PORT, async () => {
+    // Signal the parent (GUI) process that we're ready
+    console.log(`SQUAD_READY:${PORT}`);
+    console.log(`[SERVER] Squad Desktop running at http://localhost:${PORT}`);
+    sendTerminalLog('System', '⏳', 'Connecting to GitHub Copilot...', 'analyzing');
+    await initCopilotClient();
+  });
+} else {
+  // GUI mode: launch server as child process, open native WebView window
+  launchGUI();
+}
 
 // ── Graceful Shutdown ──────────────────────────────────────────────────────
 function shutdown() {
