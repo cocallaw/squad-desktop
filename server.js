@@ -259,10 +259,11 @@ async function getOrCreateSession(agentId) {
   if (!agent || !squadClient) return null;
 
   try {
+    const roster = agents.map(a => `- ${a.emoji} ${a.name} (${a.role})${a.id === agentId ? ' ← you' : ''}`).join('\n');
     const session = await squadClient.createSession({
       systemMessage: {
         mode: 'append',
-        content: `You are ${agent.name}, a ${agent.role} AI agent. You work as part of a Squad team. Be concise and actionable in your responses. Focus on your role expertise.`
+        content: `You are ${agent.name}, a ${agent.role} AI agent. You work as part of a Squad team.\n\nYour team roster:\n${roster}\n\nBe concise and actionable in your responses. Focus on your role expertise. When referring to teammates, use their names.`
       }
     });
 
