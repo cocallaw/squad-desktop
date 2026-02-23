@@ -400,12 +400,14 @@ function detectResponseDelegations(sourceAgent, response) {
     const nRe = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     // Patterns: "Ariadne's on it", "I've asked Ariadne to X", "Ariadne will review X",
-    // "asking Ariadne to X", "Ariadne, can you X", "delegating to Ariadne"
+    // "asking Ariadne to X", "delegating to Ariadne", "Here's Ariadne's review"
     const patterns = [
       new RegExp(`(?:I've |I have |I'll |let me )?(?:ask|asked|asking)\\s+${nRe}\\s+to\\s+(.+?)(?:\\.|\\n|$)`, 'i'),
       new RegExp(`${nRe}\\s+(?:will|can|should|is going to)\\s+(.+?)(?:\\.|\\n|$)`, 'i'),
       new RegExp(`${nRe}'s\\s+on\\s+it`, 'i'),
       new RegExp(`delegat(?:e|ed|ing)\\s+(?:this )?to\\s+${nRe}`, 'i'),
+      new RegExp(`(?:here(?:'s| is)\\s+)?${nRe}'s\\s+(review|analysis|assessment|findings|report|feedback|suggestions|recommendations|work|output)`, 'i'),
+      new RegExp(`${nRe}\\s+(?:reviewed|analyzed|checked|found|flagged|identified|reported|noted)\\s+(.+?)(?:\\.|\\n|$)`, 'i'),
     ];
 
     for (const p of patterns) {
@@ -476,18 +478,20 @@ function detectDelegations(command, sourceAgent) {
     if (target.id === sourceAgent.id) continue;
     const n = target.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const patterns = [
-      new RegExp(`(?:can you |please )?(?:ask|as)\\s+${n}\\s+to\\s+(.+?)(?=\\.|$|\\bask\\s|\\btell\\s|\\bhave\\s)`, 'i'),
-      new RegExp(`(?:can you |please )?tell\\s+${n}\\s+to\\s+(.+?)(?=\\.|$|\\bask\\s|\\btell\\s|\\bhave\\s)`, 'i'),
-      new RegExp(`(?:can you |please )?have\\s+${n}\\s+(.+?)(?=\\.|$|\\bask\\s|\\btell\\s|\\bhave\\s)`, 'i'),
+      new RegExp(`(?:can you |please )?(?:ask|as)\\s+${n}\\s+to\\s+(.+?)(?=\\.|$|\\bask\\s|\\btell\\s|\\bhave\\s|\\bdelegate\\s)`, 'i'),
+      new RegExp(`(?:can you |please )?tell\\s+${n}\\s+to\\s+(.+?)(?=\\.|$|\\bask\\s|\\btell\\s|\\bhave\\s|\\bdelegate\\s)`, 'i'),
+      new RegExp(`(?:can you |please )?have\\s+${n}\\s+(.+?)(?=\\.|$|\\bask\\s|\\btell\\s|\\bhave\\s|\\bdelegate\\s)`, 'i'),
+      new RegExp(`(?:can you |please )?delegate\\s+to\\s+${n}\\s+to\\s+(.+?)(?=\\.|$|\\bask\\s|\\btell\\s|\\bhave\\s|\\bdelegate\\s)`, 'i'),
+      new RegExp(`(?:can you |please )?delegate\\s+(?:this\\s+)?to\\s+${n}`, 'i'),
     ];
     for (const p of patterns) {
       const m = remaining.match(p);
-      if (m && m[1]) {
-        const task = m[1].trim().replace(/^"|"$/g, '').replace(/\.\s*$/, '');
-        if (task) {
-          results.push({ target, task, fullMatch: m[0] });
-          remaining = remaining.replace(m[0], '');
-        }
+      if (m) {
+        const task = (m[1] || '').trim().replace(/^"|"$/g, '').replace(/\.\s*$/, '');
+        // For patterns without a captured task, derive from the full command
+        const finalTask = task || remaining.replace(m[0], '').trim().replace(/^[.,;:\s]+|[.,;:\s]+$/g, '') || `Assist with ${sourceAgent.name}'s request`;
+        results.push({ target, task: finalTask, fullMatch: m[0] });
+        remaining = remaining.replace(m[0], '');
         break; // one match per agent
       }
     }
