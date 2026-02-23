@@ -44,6 +44,7 @@ let squadClient = null;
 let cliProcess = null;
 const agentSessions = new Map();
 const nativeMessageQueue = [];
+const agentProcessingLock = new Map(); // per-agent command serialization
 
 // ── WebSocket Broadcast ────────────────────────────────────────────────────
 let wss;
@@ -280,6 +281,13 @@ async function getOrCreateSession(agentId) {
 }
 
 // ── Command Processing ─────────────────────────────────────────────────────
+// Serialize commands per agent — copilot sessions can't handle concurrent sendAndWait
+function enqueueCommand(agentId, queueItem) {
+  const prev = agentProcessingLock.get(agentId) || Promise.resolve();
+  const next = prev.then(() => processCommand(agentId, queueItem)).catch(() => {});
+  agentProcessingLock.set(agentId, next);
+}
+
 async function processCommand(agentId, queueItem) {
   const agent = agents.find(a => a.id === agentId);
   if (!agent) return;
@@ -473,7 +481,7 @@ app.post('/api/agents/:id/command', (req, res) => {
       };
       d.target.queue.push(targetItem);
       updateQueueItem(d.target.id, targetItem);
-      processCommand(d.target.id, targetItem);
+      enqueueCommand(d.target.id, targetItem);
       sendTerminalLog(agent.name, '🔀', `${agent.name} → ${d.target.name}: "${d.task}"`, 'info');
       names.push(d.target.name);
     }
@@ -486,7 +494,7 @@ app.post('/api/agents/:id/command', (req, res) => {
     if (remainder.length > 10) {
       // Source agent still has its own work
       queueItem.command = remainder;
-      processCommand(agentId, queueItem);
+      enqueueCommand(agentId, queueItem);
       sendTerminalLog(agent.name, '📋', `${agent.name} also working on: "${remainder}"`, 'info');
     } else {
       queueItem.status = 'DONE';
@@ -494,7 +502,7 @@ app.post('/api/agents/:id/command', (req, res) => {
       updateQueueItem(agentId, queueItem);
     }
   } else {
-    processCommand(agentId, queueItem);
+    enqueueCommand(agentId, queueItem);
   }
 
   res.status(202).json(queueItem);
@@ -586,7 +594,7 @@ function setupNativeWindow() {
     };
     agent.queue.push(queueItem);
     updateQueueItem(agentId, queueItem);
-    processCommand(agentId, queueItem);
+    enqueueCommand(agentId, queueItem);
     return JSON.stringify(queueItem);
   });
 

@@ -32,11 +32,6 @@ function renderAgentCard(agent) {
         <div class="agent-output" title="Click to expand">${outputPreview}</div>
     `;
 
-    // Click-to-expand output
-    card.querySelector('.agent-output').addEventListener('click', function() {
-        this.classList.toggle('expanded');
-    });
-
     return card;
 }
 
@@ -267,6 +262,12 @@ async function initialize() {
     // Poll connection status
     updateConnectionStatus();
     setInterval(updateConnectionStatus, 5000);
+
+    // Click-to-expand agent output (event delegation — survives re-renders)
+    document.getElementById('agents-list').addEventListener('click', function(e) {
+        const output = e.target.closest('.agent-output');
+        if (output) output.classList.toggle('expanded');
+    });
 }
 
 async function updateConnectionStatus() {
