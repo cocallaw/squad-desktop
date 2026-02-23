@@ -355,6 +355,14 @@ async function processCommand(agentId, queueItem) {
 
     sendTerminalLog(agent.name, '✅', `${agent.name} completed task`, 'success');
 
+    // Push response lines to agent card (covers assistant.message path)
+    if (fullResponse && agent.output.length === 0) {
+      const lines = fullResponse.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        updateAgentStatus(agentId, 'WORKING', line);
+      }
+    }
+
     queueItem.status = 'DONE';
     queueItem.result = fullResponse.slice(0, 500) || 'Task completed';
     updateQueueItem(agentId, queueItem);
