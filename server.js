@@ -409,6 +409,26 @@ app.delete('/api/agents/:id', async (req, res) => {
   res.json(agents);
 });
 
+// ── Delegation Detection ───────────────────────────────────────────────────
+// Detects commands like "ask Ariadne to review X" and routes to the named agent.
+function detectDelegation(command, sourceAgent) {
+  for (const target of agents) {
+    if (target.id === sourceAgent.id) continue;
+    const n = target.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`(?:can you |please )?ask\\s+${n}\\s+to\\s+(.+)`, 'is'),
+      new RegExp(`(?:can you |please )?tell\\s+${n}\\s+to\\s+(.+)`, 'is'),
+      new RegExp(`(?:can you |please )?have\\s+${n}\\s+(.+)`, 'is'),
+      new RegExp(`^[^,]*?${n}[,:]\\s*(.+)`, 'is'),
+    ];
+    for (const p of patterns) {
+      const m = command.match(p);
+      if (m && m[1]) return { target, task: m[1].trim().replace(/^"|"$/g, '') };
+    }
+  }
+  return null;
+}
+
 app.post('/api/agents/:id/command', (req, res) => {
   const agentId = req.params.id;
   const agent = agents.find(a => a.id === agentId);
@@ -417,6 +437,8 @@ app.post('/api/agents/:id/command', (req, res) => {
   const { command } = req.body;
   if (!command) return res.status(400).json({ error: 'command is required' });
 
+  const delegation = detectDelegation(command, agent);
+
   const queueItem = {
     id: randomUUID(), command, status: 'PENDING',
     timestamp: new Date().toISOString(), result: null
@@ -424,7 +446,26 @@ app.post('/api/agents/:id/command', (req, res) => {
 
   agent.queue.push(queueItem);
   updateQueueItem(agentId, queueItem);
-  processCommand(agentId, queueItem);
+
+  if (delegation) {
+    // Route the extracted task to the target agent
+    const targetItem = {
+      id: randomUUID(), command: delegation.task, status: 'PENDING',
+      timestamp: new Date().toISOString(), result: null
+    };
+    delegation.target.queue.push(targetItem);
+    updateQueueItem(delegation.target.id, targetItem);
+    processCommand(delegation.target.id, targetItem);
+
+    // Mark the source command as delegated (no copilot call needed)
+    queueItem.status = 'DONE';
+    queueItem.result = `Delegated to ${delegation.target.name}`;
+    updateQueueItem(agentId, queueItem);
+    sendTerminalLog(agent.name, '🔀', `${agent.name} → ${delegation.target.name}: "${delegation.task}"`, 'info');
+  } else {
+    processCommand(agentId, queueItem);
+  }
+
   res.status(202).json(queueItem);
 });
 
