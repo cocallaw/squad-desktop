@@ -134,9 +134,21 @@ Squad Desktop recognizes delegation patterns in natural language:
 
 When a pattern matches, the target agent's status flips to WORKING and the task appears in their card.
 
-## Building the Windows Executable
+## Building & Running as Standalone Exe
+
+Squad Desktop can be packaged as a single Windows `.exe` (~44MB) that bundles Node.js, the server, and all dependencies. No Node.js installation required on the target machine — just the exe and its `public/` folder.
+
+### Prerequisites
+
+- **Node.js 20+** and **npm** (for building only — not needed to run the exe)
+- **Windows 10/11** with WebView2 runtime (pre-installed on Windows 11; auto-installed on Windows 10 via Edge)
+
+### Build
 
 ```bash
+git clone https://github.com/pallavrustogi/squad-desktop.git
+cd squad-desktop
+npm install
 npm run build
 ```
 
@@ -149,14 +161,37 @@ This runs four steps:
 | 3 | `build:exe` | `@yao-pkg/pkg` compiles into `dist/squad-desktop.exe` (node20-win-x64) |
 | 4 | `build:gui` | Patches PE subsystem from CONSOLE → WINDOWS (hides console window) |
 
-### Running
+### Output
+
+```
+dist/
+├── squad-desktop.exe    # ~44MB standalone executable
+├── public/              # PWA frontend assets (must stay next to the exe)
+├── gh-copilot/          # Bundled Copilot CLI binary
+└── server.cjs           # Intermediate bundle (can be deleted)
+```
+
+### Running the Exe
 
 ```bash
-# Double-click squad-desktop.exe, or:
+# Double-click squad-desktop.exe, or from command line:
 .\dist\squad-desktop.exe
 ```
 
-> **Note:** The `dist/public/` folder must stay alongside the exe.
+The exe launches a native WebView2 desktop window (no console window visible) and starts the server at `http://localhost:3847`. No browser needed — the app runs in its own window.
+
+### Distributing
+
+To share with others, copy the entire `dist/` folder:
+
+```
+dist/
+├── squad-desktop.exe
+├── public/              # Required — must stay alongside the exe
+└── gh-copilot/          # Required — Copilot CLI binary
+```
+
+> **Note:** The recipient needs **GitHub Copilot CLI** authenticated (`gh copilot` must work) and **WebView2 runtime** installed (comes with Windows 11, or any recent Edge install on Windows 10).
 
 ## Configuration
 
