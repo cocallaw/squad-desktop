@@ -11,6 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-20+-green" alt="Node 20+"></a>
   <a href="https://img.shields.io/badge/platform-Windows-blue"><img src="https://img.shields.io/badge/platform-Windows-blue" alt="Windows"></a>
+  <a href="https://img.shields.io/badge/platform-macOS_ARM-blue"><img src="https://img.shields.io/badge/platform-macOS_ARM-blue" alt="macOS ARM"></a>
 </p>
 
 ---
@@ -19,7 +20,7 @@ AI coding tools give you one agent, one task, one conversation. But real work is
 
 Squad Desktop is the **mission control** for that workflow. It connects to [Squad](https://github.com/bradygaster/squad) agents via GitHub Copilot CLI, shows every agent's status and output in real time, and lets you delegate tasks with natural language. Type "ask Ariadne to review the auth module" and watch the command flow through Cobb to Ariadne — live, in your terminal panel.
 
-Ship it as a single `.exe` — double-click and go. No Electron, no crashes, no native dependencies.
+Ship it as a single `.exe` on Windows or a `.app` bundle on macOS — double-click and go. No Electron, no crashes, no native dependencies.
 
 ## Quickstart
 
@@ -32,7 +33,7 @@ npm install
 npm start
 ```
 
-That's it. The server starts on **http://localhost:3847** and opens a native WebView2 window. You'll see your agents, a terminal panel, and a command queue — ready to go.
+That's it. The server starts on **http://localhost:3847** and opens a native desktop window (WebView2 on Windows, WebKit on macOS). You'll see your agents, a terminal panel, and a command queue — ready to go.
 
 <p align="center">
   <img src="docs/dashboard.png" alt="Squad Desktop dashboard" width="800">
@@ -46,7 +47,7 @@ That's it. The server starts on **http://localhost:3847** and opens a native Web
 | **Delegation** | Manual — you copy-paste between agents | Natural language — "ask Ariadne to review this" |
 | **Status** | Hidden behind CLI scrollback | Real-time cards with live status and output |
 | **Coordination** | You are the router | Cobb delegates, agents coordinate autonomously |
-| **Deployment** | Terminal window | Native `.exe` with WebView2 window |
+| **Deployment** | Terminal window | Native `.exe` (Windows) or `.app` (macOS) desktop window |
 
 ## What happens when you send a command
 
@@ -72,13 +73,13 @@ All of this is visible live. No tab-switching, no log-tailing, no guessing which
 
 **Command queue.** Every command you send is logged in a queue panel with timestamps. You can see what's pending, what's running, and what's done.
 
-**Native desktop window.** Ships as a standalone `.exe` using WebView2 — the same rendering engine as Edge. No Electron, no Chromium download, no `child-process-gone` crashes. The console window is hidden automatically.
+**Native desktop window.** Ships as a standalone `.exe` on Windows using WebView2, or a `.app` bundle on macOS using WebKit — the same rendering engines as Edge and Safari respectively. No Electron, no Chromium download, no `child-process-gone` crashes. On Windows, the console window is hidden automatically.
 
 **PWA fallback.** If you prefer a browser, the same UI is available as an installable Progressive Web App at `http://localhost:3847`. Service worker caches the app shell for offline resilience.
 
-**Two-process architecture.** The native window (Win32 message loop) runs in the parent process while the Express + WebSocket server runs in a child process. This keeps the UI responsive even under heavy agent load.
+**Two-process architecture.** The native window (Win32 message loop on Windows, Cocoa run loop on macOS) runs in the parent process while the Express + WebSocket server runs in a child process. This keeps the UI responsive even under heavy agent load.
 
-**Single-file distribution.** Run `npm run build` to produce a standalone `squad-desktop.exe` (~44MB) with Node.js, the server, and all dependencies baked in. Copy the exe + `public/` folder — that's the entire distribution.
+**Single-file distribution.** Run `npm run build` (Windows) or `npm run build:macos` (macOS ARM) to produce a standalone executable with Node.js, the server, and all dependencies baked in. On Windows, copy the exe + `public/` folder. On macOS, drag the `.app` bundle to Applications.
 
 ## Architecture
 
@@ -94,9 +95,11 @@ squad-desktop/
 │   └── service-worker.js  # Cache-first app shell, network-first API
 ├── scripts/
 │   ├── build-copy.cjs     # Copies assets + patches for packaging
-│   └── patch-gui.cjs      # Patches PE subsystem to hide console window
+│   ├── patch-gui.cjs      # Patches PE subsystem to hide console window (Windows only)
+│   └── create-macos-app.cjs # Creates .app bundle for macOS distribution
 ├── dist/                  # Build output
 │   ├── squad-desktop.exe  # Standalone Windows executable
+│   ├── Squad Desktop.app  # Standalone macOS app bundle
 │   └── public/            # Bundled PWA assets
 └── package.json
 ```
@@ -116,7 +119,7 @@ The **frontend** (`public/`) is the eyes:
 - Command queue shows the history of all commands sent
 - `squadAPI.js` provides `window.squadAPI` — a drop-in replacement for the original Electron IPC bridge
 
-The **native window** uses WebView2 (via `webview-nodejs`) to host the PWA in a borderless desktop window. A two-process architecture keeps the Win32 message loop (which blocks) in the parent process while the Express server runs unblocked in a child process.
+The **native window** uses WebView2 on Windows (via `webview-nodejs`) or WebKit on macOS to host the PWA in a borderless desktop window. A two-process architecture keeps the native message loop (which blocks) in the parent process while the Express server runs unblocked in a child process.
 
 ### Delegation routing
 
@@ -134,7 +137,7 @@ Squad Desktop recognizes delegation patterns in natural language:
 
 When a pattern matches, the target agent's status flips to WORKING and the task appears in their card.
 
-## Building & Running as Standalone Exe
+## Building & Running as Standalone Exe (Windows)
 
 Squad Desktop can be packaged as a single Windows `.exe` (~44MB) that bundles Node.js, the server, and all dependencies. No Node.js installation required on the target machine — just the exe and its `public/` folder.
 
@@ -198,6 +201,73 @@ dist/
 
 > **Note:** The recipient needs **GitHub Copilot CLI** authenticated (`gh copilot` must work) and **WebView2 runtime** installed (comes with Windows 11, or any recent Edge install on Windows 10).
 
+## Building & Running on macOS (Apple Silicon)
+
+Squad Desktop can also be built as a native macOS `.app` bundle for Apple Silicon (M1/M2/M3/M4) Macs.
+
+### Prerequisites
+
+- **Node.js 20+** and **npm** (for building only — not needed to run the app)
+- **macOS 11+** (Big Sur or later) on Apple Silicon
+- **Xcode Command Line Tools** (required by `cmake-js` to compile the native webview addon):
+  ```
+  xcode-select --install
+  ```
+- **CMake** (required by `cmake-js`):
+  ```
+  brew install cmake
+  ```
+
+### Build
+
+```bash
+git clone https://github.com/pallavrustogi/squad-desktop.git
+cd squad-desktop
+npm install
+npm run build:macos
+```
+
+This runs four steps:
+
+| Step | Command | What it does |
+|------|---------|-------------|
+| 1 | `build:bundle` | esbuild bundles `server.js` into `dist/server.cjs` (single CJS file) |
+| 2 | `build:copy` | Copies `public/`, Copilot CLI, and WebView deps to `dist/` |
+| 3 | `build:exe:macos` | `@yao-pkg/pkg` compiles into `dist/squad-desktop` (node20-macos-arm64) |
+| 4 | `build:app` | Creates `dist/Squad Desktop.app` bundle for Finder integration |
+
+### Output
+
+```
+dist/
+├── Squad Desktop.app    # macOS app bundle — drag to /Applications
+│   └── Contents/
+│       ├── Info.plist
+│       └── MacOS/
+│           ├── squad-desktop           # Standalone binary
+│           ├── squad-desktop-launcher  # Shell launcher
+│           ├── public/                 # PWA frontend assets
+│           └── node_modules/           # Runtime native deps
+├── squad-desktop        # Standalone binary (can also run directly)
+└── public/              # PWA frontend assets
+```
+
+### Running the App
+
+```bash
+# Option 1: Open the .app bundle (recommended)
+open "dist/Squad Desktop.app"
+
+# Option 2: Run the binary directly
+./dist/squad-desktop
+```
+
+### Distributing
+
+To share with others, copy the `Squad Desktop.app` bundle — it's self-contained. The recipient can drag it to `/Applications`.
+
+> **Note:** The recipient needs **Node.js 20+** installed, **GitHub Copilot CLI** authenticated (`gh copilot` must work), and macOS uses WebKit (WKWebView) for the native window — no additional runtime needed.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -248,7 +318,7 @@ The `window.squadAPI` interface is fully compatible — the frontend code didn't
 - **Task history & replay** — browse past delegations and their results
 - **Multi-project support** — switch between different Squad configurations
 - **Custom agent themes** — assign colors and icons to agents
-- **Linux/macOS support** — WebView2 alternative for non-Windows platforms
+- **Linux/macOS support** — ~~WebView2 alternative for non-Windows platforms~~ macOS ARM (Apple Silicon) now supported; Linux support planned
 
 ## About
 
