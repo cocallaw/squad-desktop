@@ -25,5 +25,10 @@
     "@yao-pkg/pkg": "^6.0.0",
     "cmake-js": "^8.0.0",
     "esbuild": "^0.25.0"
+  },
+  "overrides": {
+    "libwebview-nodejs": {
+      "cmake-js": "^8.0.0"
+    }
   }
 }
