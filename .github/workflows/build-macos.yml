@@ -33,7 +33,6 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-            /opt/homebrew/Cellar/cmake
           key: ${{ runner.os }}-homebrew-cmake
 
       - name: Install CMake
